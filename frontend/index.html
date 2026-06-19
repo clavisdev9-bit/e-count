@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Counting Barcode</title>
+<style>
+  :root{--bg:#f6f5f1;--card:#fff;--ink:#23231f;--muted:#6b6b66;--line:#e4e2da;
+        --accent:#0f6e56;--accent-bg:#e1f5ee;--warn:#854f0b;--warn-bg:#faeeda;}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,system-ui,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--ink)}
+  .wrap{max-width:480px;margin:0 auto;padding:16px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px}
+  .top{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+  .brand{font-weight:600;font-size:17px}
+  .net{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted)}
+  .dot{width:9px;height:9px;border-radius:50%;background:#c2c0b6;display:inline-block}
+  .dot.on{background:var(--accent)}
+  label{font-size:13px;color:var(--muted)}
+  select{font:inherit;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:#fff}
+  input[type=text]{width:100%;padding:12px;border:1px solid var(--line);border-radius:10px;
+        font-family:ui-monospace,Menlo,Consolas,monospace;font-size:16px}
+  .stats{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin:14px 0}
+  .stat{background:var(--bg);border-radius:10px;padding:10px 12px}
+  .stat .l{font-size:12px;color:var(--muted)}
+  .stat .v{font-size:22px;font-weight:600}
+  .row{display:flex;align-items:center;gap:10px;padding:11px 4px;border-top:1px solid var(--line)}
+  .bc{flex:1;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px}
+  .pill{font-size:11px;padding:2px 8px;border-radius:20px;margin-left:6px}
+  .pill.p{background:var(--warn-bg);color:var(--warn)}
+  .pill.s{background:var(--accent-bg);color:var(--accent)}
+  .q{min-width:30px;text-align:center;font-size:18px;font-weight:600}
+  .btns{display:flex;gap:8px;margin-top:14px}
+  button{font:inherit;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:#fff;cursor:pointer}
+  button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+  button:active{transform:scale(.98)}
+  .empty{padding:24px;text-align:center;color:#9a9a93}
+  .msg{margin-top:10px;font-size:13px;color:var(--muted)}
+  .cfg{margin-top:16px;font-size:13px;color:var(--muted)}
+  .cfg input{width:100%;padding:8px;border:1px solid var(--line);border-radius:8px;font-size:13px;margin-top:4px}
+  textarea{width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;
+        font-family:ui-monospace,monospace;font-size:13px;margin-top:8px}
+  #reader{margin-top:12px;border-radius:10px;overflow:hidden}
+  #reader:empty{margin-top:0}
+  /* Collapsible scan list */
+  #list-collapse{border:1px solid var(--line);border-radius:10px;overflow:hidden;margin:14px 0}
+  #list-collapse summary{padding:9px 12px;cursor:pointer;font-size:13px;font-weight:600;
+        color:var(--muted);list-style:none;display:flex;align-items:center;justify-content:space-between;
+        -webkit-user-select:none;user-select:none}
+  #list-collapse summary::after{content:'▾';font-size:12px;transition:transform .2s}
+  #list-collapse:not([open]) summary::after{transform:rotate(-90deg)}
+  #list-collapse[open] summary{border-bottom:1px solid var(--line)}
+  #list-collapse #list{padding:0 4px}
+  .scan-row{position:relative}
+  #scan-ring{position:absolute;inset:-2px;border:2px solid var(--accent);border-radius:12px;
+        opacity:0;pointer-events:none}
+  .btn-enter{display:flex;align-items:center;justify-content:center;padding:0 14px;
+        background:var(--accent);color:#fff;border:none;border-radius:10px;cursor:pointer;
+        flex-shrink:0;height:100%}
+  .btn-enter svg{display:block}
+  #scan-toast{display:flex;align-items:center;gap:6px;margin-top:8px;padding:8px 12px;
+        background:var(--accent-bg);border:1px solid var(--accent);border-radius:10px;
+        font-size:13px;color:var(--accent);font-weight:500;opacity:0;pointer-events:none}
+  #scan-toast .toast-check{font-size:16px;flex-shrink:0}
+  /* Layout helpers (replaces inline styles) */
+  .tenant-select-row{display:flex;gap:10px;align-items:center;margin-bottom:10px}
+  .scan-row{display:flex;gap:8px}
+  .scan-input{flex:1}
+  .btn-cam{white-space:nowrap}
+  .btn-flex{flex:1}
+  .btn-flex-lg{flex:1.4}
+  .empty-tenant{padding:8px 0;font-size:13px;color:var(--muted)}
+  /* Admin panel */
+  details.admin{margin-top:16px;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  details.admin summary{padding:10px 14px;cursor:pointer;font-size:13px;font-weight:600;color:var(--muted);
+        -webkit-user-select:none;user-select:none;list-style:none;display:flex;align-items:center;gap:6px}
+  details.admin summary::before{content:'⚙';font-size:14px}
+  details.admin[open] summary{border-bottom:1px solid var(--line)}
+  .admin-body{padding:12px 14px}
+  .tenant-row{display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-top:1px solid var(--line);font-size:13px}
+  .tenant-row:first-child{border-top:none}
+  .tenant-id{font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:600}
+  .tenant-name{color:var(--muted);margin-left:6px}
+  .tenant-row-actions{display:flex;gap:4px}
+  .del-btn,.reset-btn{background:none;border:1px solid var(--line);border-radius:6px;padding:2px 8px;font-size:12px;cursor:pointer;color:var(--muted)}
+  .del-btn:hover{border-color:#c00;color:#c00}
+  .reset-btn:hover{border-color:var(--warn);color:var(--warn)}
+  .add-row{display:flex;gap:6px;margin-top:10px}
+  .add-row input{flex:1;padding:7px 9px;border:1px solid var(--line);border-radius:8px;font-size:13px}
+  .add-row button{padding:7px 14px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:13px;cursor:pointer}
+  .admin-msg{font-size:12px;color:var(--muted);margin-top:6px;min-height:16px}
+  .admin-section-title{font-size:13px}
+  /* Ganti PIN */
+  .change-pin-section{margin-top:16px;padding-top:12px;border-top:1px solid var(--line)}
+  .change-pin-row{display:flex;gap:6px;margin-top:6px}
+  .change-pin-row input{flex:1;padding:7px 9px;border:1px solid var(--line);border-radius:8px;font-size:13px;
+        font-family:ui-monospace,Menlo,monospace;letter-spacing:.15em;width:0}
+  .change-pin-row button{padding:7px 12px;background:var(--accent);color:#fff;border:none;
+        border-radius:8px;font-size:13px;cursor:pointer;white-space:nowrap}
+  .admin-close-row{margin-top:14px;padding-top:12px;border-top:1px solid var(--line);text-align:right}
+  .admin-close-btn{padding:8px 20px;background:#fff;border:1px solid var(--line);border-radius:8px;
+        font-size:13px;cursor:pointer;color:var(--muted)}
+  .admin-close-btn:hover{border-color:var(--ink);color:var(--ink)}
+  /* PIN modal */
+  #pin-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:100;
+        align-items:center;justify-content:center}
+  #pin-overlay.show{display:flex}
+  #pin-box{background:#fff;border-radius:20px;padding:28px 24px 20px;width:280px;text-align:center;
+        box-shadow:0 8px 32px rgba(0,0,0,.18)}
+  #pin-title{font-size:15px;font-weight:600;margin-bottom:20px}
+  .pin-dots{display:flex;gap:12px;justify-content:center;margin-bottom:20px}
+  .pin-dot{width:14px;height:14px;border-radius:50%;border:2px solid var(--line);background:#fff;transition:background .15s}
+  .pin-dot.filled{background:var(--accent);border-color:var(--accent)}
+  .pin-dot.err{border-color:#c00}
+  .pin-err{font-size:12px;color:#c00;min-height:16px;margin-bottom:10px}
+  .numpad{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+  .numpad-key{font-size:20px;font-weight:500;padding:14px 0;border:1px solid var(--line);
+        border-radius:12px;background:#fff;cursor:pointer;-webkit-tap-highlight-color:transparent}
+  .numpad-key:active{background:var(--bg)}
+  .numpad-del{font-size:16px;color:var(--muted)}
+  .numpad-cancel{font-size:13px;color:var(--muted);grid-column:span 3;padding:10px;
+        border:none;background:none;cursor:pointer;margin-top:2px}
+</style>
+</head>
+<body>
+
+<!-- PIN modal -->
+<div id="pin-overlay" role="dialog" aria-modal="true" aria-labelledby="pin-title">
+  <div id="pin-box">
+    <div id="pin-title">Masukkan PIN Administrator</div>
+    <div class="pin-dots">
+      <span class="pin-dot" id="pd0"></span>
+      <span class="pin-dot" id="pd1"></span>
+      <span class="pin-dot" id="pd2"></span>
+      <span class="pin-dot" id="pd3"></span>
+    </div>
+    <div class="pin-err" id="pin-err"></div>
+    <div class="numpad">
+      <button type="button" class="numpad-key">1</button>
+      <button type="button" class="numpad-key">2</button>
+      <button type="button" class="numpad-key">3</button>
+      <button type="button" class="numpad-key">4</button>
+      <button type="button" class="numpad-key">5</button>
+      <button type="button" class="numpad-key">6</button>
+      <button type="button" class="numpad-key">7</button>
+      <button type="button" class="numpad-key">8</button>
+      <button type="button" class="numpad-key">9</button>
+      <button type="button" class="numpad-key numpad-del" id="pin-del">⌫</button>
+      <button type="button" class="numpad-key">0</button>
+      <button type="button" class="numpad-cancel" id="pin-cancel">Batal</button>
+    </div>
+  </div>
+</div>
+
+<div class="wrap">
+  <div class="card">
+    <div class="top">
+      <span class="brand">Counting Barcode</span>
+      <span class="net"><span class="dot" id="net"></span><span id="netlabel">offline</span></span>
+    </div>
+
+    <div class="tenant-select-row">
+      <label for="tenant">Tenant</label>
+      <select id="tenant" aria-label="Pilih tenant">
+        <option>D07</option><option>D08</option><option>D09</option>
+      </select>
+    </div>
+
+    <div class="scan-row">
+      <span id="scan-ring" aria-hidden="true"></span>
+      <input id="scan" type="text" inputmode="numeric" autocomplete="off"
+             placeholder="Scan / ketik barcode, lalu Enter" autofocus class="scan-input">
+      <button id="scan-submit" type="button" class="btn-enter" aria-label="Submit scan">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <polyline points="9 10 4 15 9 20"/>
+          <path d="M20 4v7a4 4 0 0 1-4 4H4"/>
+        </svg>
+      </button>
+      <button id="cam" type="button" class="btn-cam">Kamera</button>
+    </div>
+    <div id="scan-toast" aria-live="polite" aria-atomic="true">
+      <span class="toast-check">&#10003;</span>
+      <span id="toast-code"></span>
+    </div>
+    <div id="reader"></div>
+
+    <div class="stats">
+      <div class="stat"><div class="l">Total scan</div><div class="v" id="s-total">0</div></div>
+      <div class="stat"><div class="l">Item unik</div><div class="v" id="s-uniq">0</div></div>
+      <div class="stat"><div class="l">Belum sync</div><div class="v" id="s-pend">0</div></div>
+      <div class="stat"><div class="l">Tersinkron</div><div class="v" id="s-sync">0</div></div>
+    </div>
+
+    <details id="list-collapse" open>
+      <summary id="list-summary">Daftar item</summary>
+      <div id="list"></div>
+    </details>
+
+    <div class="btns">
+      <button id="undo" type="button" class="btn-flex">Undo</button>
+      <button id="sync" type="button" class="primary btn-flex-lg">Sync sekarang</button>
+      <button id="exp" type="button" class="btn-flex">Ekspor</button>
+    </div>
+
+    <div id="box"></div>
+
+    <div class="cfg">
+      Alamat API
+      <input id="api" type="text" placeholder="kosong = server yang sama (mis. http://localhost:3000)">
+    </div>
+
+    <details class="admin" id="admin-details">
+      <summary>Konfigurasi Administrator</summary>
+      <div class="admin-body">
+        <strong class="admin-section-title">Daftar Tenant</strong>
+        <div id="tenant-list"></div>
+        <div class="add-row">
+          <input id="new-tid" type="text" placeholder="ID (mis. D10)" maxlength="30">
+          <input id="new-tname" type="text" placeholder="Nama (opsional)" maxlength="60">
+          <button id="add-tenant" type="button">Tambah</button>
+        </div>
+        <div class="admin-msg" id="admin-msg"></div>
+
+        <div class="change-pin-section">
+          <strong class="admin-section-title">Ganti PIN</strong>
+          <div class="change-pin-row">
+            <input id="cp-old" type="password" inputmode="numeric" placeholder="PIN lama" maxlength="8">
+            <input id="cp-new" type="password" inputmode="numeric" placeholder="PIN baru (4-8 digit)" maxlength="8">
+            <button id="change-pin-btn" type="button">Simpan</button>
+          </div>
+          <div class="admin-msg" id="pin-change-msg"></div>
+        </div>
+        <div class="admin-close-row">
+          <button id="admin-close" type="button" class="admin-close-btn">Tutup</button>
+        </div>
+      </div>
+    </details>
+  </div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script>
+const DB_NAME='counting', STORE='events';
+function openDB(){return new Promise((res,rej)=>{const r=indexedDB.open(DB_NAME,1);
+  r.onupgradeneeded=()=>{const db=r.result;if(!db.objectStoreNames.contains(STORE))db.createObjectStore(STORE,{keyPath:'id'});};
+  r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);});}
+async function allEvents(){const db=await openDB();return new Promise((res,rej)=>{
+  const rq=db.transaction(STORE,'readonly').objectStore(STORE).getAll();
+  rq.onsuccess=()=>res(rq.result);rq.onerror=()=>rej(rq.error);});}
+async function putEvent(ev){const db=await openDB();return new Promise((res,rej)=>{
+  const t=db.transaction(STORE,'readwrite');t.objectStore(STORE).put(ev);
+  t.oncomplete=()=>res();t.onerror=()=>rej(t.error);});}
+async function delEvent(id){const db=await openDB();return new Promise((res,rej)=>{
+  const t=db.transaction(STORE,'readwrite');t.objectStore(STORE).delete(id);
+  t.oncomplete=()=>res();t.onerror=()=>rej(t.error);});}
+
+const $=id=>document.getElementById(id);
+const scan=$('scan');
+const apiBase=()=>($('api').value||'').trim().replace(/\/$/,'');
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const uid=()=>crypto.randomUUID?crypto.randomUUID():Date.now()+'-'+Math.random().toString(16).slice(2);
+
+function msg(t){$('box').innerHTML='<div class="msg">'+esc(t)+'</div>';}
+
+function beep(){
+  try{
+    const ctx=new(window.AudioContext||window.webkitAudioContext)();
+    const osc=ctx.createOscillator();
+    const gain=ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.type='sine'; osc.frequency.value=880;
+    gain.gain.setValueAtTime(0.25,ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.18);
+    osc.start(ctx.currentTime); osc.stop(ctx.currentTime+0.18);
+    setTimeout(()=>ctx.close(),300);
+  }catch(e){}
+}
+
+function flashRing(){
+  $('scan-ring').animate([{opacity:1},{opacity:0}],{duration:400,easing:'ease-out'});
+}
+
+let _toastAnim=null;
+function showScanToast(code){
+  const toast=$('scan-toast');
+  $('toast-code').textContent=code.length>30?code.slice(0,28)+'…':code;
+  if(_toastAnim) _toastAnim.cancel();
+  _toastAnim=toast.animate(
+    [{opacity:0},{opacity:1,offset:.1},{opacity:1,offset:.7},{opacity:0}],
+    {duration:1800,easing:'ease-in-out',fill:'forwards'}
+  );
+}
+
+async function addScan(code){
+  code=(code||'').trim(); if(!code) return;
+  await putEvent({id:uid(),tenant_id:$('tenant').value,barcode:code,scanned_at:new Date().toISOString(),synced:0});
+  beep(); flashRing(); showScanToast(code);
+  await render();
+  if(navigator.onLine) syncNow(true);
+}
+
+async function undo(){
+  const tid=$('tenant').value;
+  const pend=(await allEvents()).filter(e=>!e.synced&&e.tenant_id===tid).sort((a,b)=>a.scanned_at<b.scanned_at?1:-1);
+  if(!pend.length){msg('Tidak ada scan yang bisa di-undo untuk tenant '+tid+' (semua sudah tersinkron).');return;}
+  await delEvent(pend[0].id); await render();
+}
+
+async function syncNow(silent){
+  const pend=(await allEvents()).filter(e=>!e.synced);
+  if(!pend.length){if(!silent)msg('Tidak ada data untuk disinkron.');return;}
+  try{
+    const r=await fetch(apiBase()+'/sync',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({events:pend.map(({synced,...e})=>e)})});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    for(const e of pend){e.synced=1;await putEvent(e);}
+    await render(); msg('Tersinkron: '+pend.length+' scan ke database.');
+  }catch(err){ msg('Gagal sync ('+err.message+'). Data tetap aman, akan dicoba lagi saat online.'); }
+}
+
+async function render(){
+  const tid=$('tenant').value;
+  const evs=(await allEvents()).filter(e=>e.tenant_id===tid).sort((a,b)=>a.scanned_at<b.scanned_at?1:-1);
+  const byCode=new Map(); let pend=0;
+  for(const e of evs){
+    if(!byCode.has(e.barcode)) byCode.set(e.barcode,{qty:0,pending:0});
+    const o=byCode.get(e.barcode); o.qty++; if(!e.synced){o.pending++;pend++;}
+  }
+  $('s-total').textContent=evs.length;
+  $('s-uniq').textContent=byCode.size;
+  $('s-pend').textContent=pend;
+  $('s-sync').textContent=evs.length-pend;
+  $('list-summary').textContent='Daftar item'+(byCode.size?' ('+byCode.size+')':'');
+  const list=$('list');
+  if(!byCode.size){list.innerHTML='<div class="empty">Belum ada item. Scan atau ketik barcode di atas.</div>';return;}
+  list.innerHTML=[...byCode.entries()].map(([code,o])=>{
+    const pill=o.pending?`<span class="pill p">${o.pending} pending</span>`:`<span class="pill s">tersync</span>`;
+    return `<div class="row"><span class="bc">${esc(code)}${pill}</span><span class="q">${o.qty}</span></div>`;
+  }).join('');
+}
+
+async function doExport(){
+  const evs=await allEvents();
+  if(!evs.length){msg('Belum ada data untuk diekspor.');return;}
+  const m=new Map();
+  for(const e of evs){const k=e.tenant_id+'|'+e.barcode;m.set(k,(m.get(k)||0)+1);}
+  const txt=['tenant|barcode|qty',...[...m].map(([k,q])=>k+'|'+q)].join('\n');
+  $('box').innerHTML='<textarea readonly rows="'+Math.min(m.size+2,10)+'"></textarea>'+
+    '<div class="btns"><button id="cp" type="button" class="btn-flex">Salin</button>'+
+    '<button id="dl" type="button" class="btn-flex">Download .txt</button></div>';
+  $('box').querySelector('textarea').value=txt;
+  $('cp').onclick=()=>{if(navigator.clipboard)navigator.clipboard.writeText(txt);$('cp').textContent='Tersalin';};
+  $('dl').onclick=()=>{const a=document.createElement('a');
+    a.href=URL.createObjectURL(new Blob([txt],{type:'text/plain'}));
+    a.download='counting_'+new Date().toISOString().slice(0,10)+'.txt';a.click();};
+}
+
+function updateNet(){const on=navigator.onLine;$('net').classList.toggle('on',on);$('netlabel').textContent=on?'online':'offline';}
+
+// --- Kamera ---
+let qr=null, scanning=false, lastCode='', lastAt=0;
+async function toggleCam(){
+  if(scanning) return stopCam();
+  if(typeof Html5Qrcode==='undefined'){msg('Library kamera gagal dimuat (cek koneksi internet).');return;}
+  qr=qr||new Html5Qrcode('reader');
+  try{
+    await qr.start({facingMode:'environment'},{fps:10,qrbox:{width:240,height:160}},onDecode,()=>{});
+    scanning=true; $('cam').textContent='Tutup';
+  }catch(err){
+    msg('Kamera tidak bisa dibuka: '+err+'. Pastikan izin kamera diberikan dan situs diakses lewat HTTPS atau localhost.');
+  }
+}
+async function stopCam(){ try{await qr.stop(); qr.clear();}catch(e){} scanning=false; $('cam').textContent='Kamera'; $('reader').innerHTML=''; }
+function onDecode(text){
+  const now=Date.now();
+  if(text===lastCode && now-lastAt<1500) return;
+  lastCode=text; lastAt=now;
+  addScan(text);
+}
+
+// --- PIN modal ---
+const adminDetails=$('admin-details');
+const pinOverlay=$('pin-overlay');
+let pinValue='';
+const PIN_MAX=4;
+
+function updatePinDots(shake){
+  for(let i=0;i<PIN_MAX;i++){
+    const d=$('pd'+i);
+    d.classList.toggle('filled',i<pinValue.length);
+    d.classList.toggle('err',!!shake);
+  }
+}
+
+function pinErr(t){
+  $('pin-err').textContent=t;
+  if(t){ updatePinDots(true); setTimeout(()=>{pinValue='';updatePinDots(false);$('pin-err').textContent='';},700); }
+}
+
+function showPinModal(){
+  pinValue=''; updatePinDots(false); $('pin-err').textContent='';
+  pinOverlay.classList.add('show');
+}
+
+function hidePinModal(){ pinOverlay.classList.remove('show'); }
+
+async function submitPin(){
+  if(pinValue.length<PIN_MAX) return;
+  try{
+    const r=await fetch(apiBase()+'/admin/verify-pin',{method:'POST',
+      headers:{'Content-Type':'application/json'},body:JSON.stringify({pin:pinValue})});
+    const j=await r.json();
+    if(j.ok){
+      sessionStorage.setItem('admin_unlocked','1');
+      hidePinModal();
+      adminDetails.open=true;
+    } else {
+      pinErr('PIN salah, coba lagi.');
+    }
+  }catch(e){ pinErr('Gagal verifikasi ('+e.message+')'); }
+}
+
+document.querySelectorAll('.numpad-key').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    const digit=btn.textContent.trim();
+    if(digit==='⌫') return;
+    if(pinValue.length>=PIN_MAX) return;
+    pinValue+=digit;
+    updatePinDots(false);
+    if(pinValue.length===PIN_MAX) submitPin();
+  });
+});
+$('pin-del').addEventListener('click',()=>{ pinValue=pinValue.slice(0,-1); updatePinDots(false); });
+$('pin-cancel').addEventListener('click',hidePinModal);
+
+function closeAdmin(){
+  adminDetails.open=false;
+  sessionStorage.removeItem('admin_unlocked');
+}
+
+adminDetails.querySelector('summary').addEventListener('click',e=>{
+  e.preventDefault();
+  if(adminDetails.open){ closeAdmin(); return; }
+  showPinModal();
+});
+
+$('admin-close').onclick=closeAdmin;
+
+// --- Tenant management ---
+async function loadTenants(){
+  try{
+    const r=await fetch(apiBase()+'/tenants');
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const {tenants}=await r.json();
+    const sel=$('tenant');
+    const cur=sel.value;
+    sel.innerHTML=tenants.map(t=>`<option value="${esc(t.tenant_id)}">${esc(t.tenant_id)}${t.name&&t.name!==t.tenant_id?' – '+esc(t.name):''}</option>`).join('');
+    if(tenants.find(t=>t.tenant_id===cur)) sel.value=cur;
+    renderTenantList(tenants);
+  }catch(e){ /* offline fallback: keep existing options */ }
+}
+
+function renderTenantList(tenants){
+  const el=$('tenant-list');
+  if(!tenants.length){el.innerHTML='<div class="empty-tenant">Belum ada tenant.</div>';return;}
+  el.innerHTML=tenants.map(t=>`
+    <div class="tenant-row">
+      <span><span class="tenant-id">${esc(t.tenant_id)}</span>${t.name&&t.name!==t.tenant_id?`<span class="tenant-name">${esc(t.name)}</span>`:''}</span>
+      <div class="tenant-row-actions">
+        <button class="reset-btn" type="button" onclick="resetTenant('${esc(t.tenant_id)}')">Reset</button>
+        <button class="del-btn" type="button" onclick="deleteTenant('${esc(t.tenant_id)}')">Hapus</button>
+      </div>
+    </div>`).join('');
+}
+
+async function resetTenant(id){
+  if(!confirm('Reset semua count untuk tenant '+id+'?\nData scan akan dihapus permanen dari server dan perangkat ini.')) return;
+  try{
+    const r=await fetch(apiBase()+'/tenants/'+encodeURIComponent(id)+'/counts',{method:'DELETE'});
+    const j=await r.json();
+    if(!j.ok) throw new Error(j.error);
+    const local=(await allEvents()).filter(e=>e.tenant_id===id);
+    for(const e of local) await delEvent(e.id);
+    await render();
+    adminMsg('Count tenant '+id+' direset. '+j.deleted+' data server + '+local.length+' data lokal dihapus.');
+  }catch(e){ adminMsg('Gagal: '+e.message); }
+}
+
+async function deleteTenant(id){
+  if(!confirm('Hapus tenant '+id+'?')) return;
+  try{
+    const r=await fetch(apiBase()+'/tenants/'+encodeURIComponent(id),{method:'DELETE'});
+    const j=await r.json();
+    if(!j.ok) throw new Error(j.error);
+    adminMsg('Tenant '+id+' dihapus.');
+    loadTenants();
+  }catch(e){ adminMsg('Gagal: '+e.message); }
+}
+
+function adminMsg(t){ const el=$('admin-msg'); el.textContent=t; setTimeout(()=>{if(el.textContent===t)el.textContent='';},4000); }
+
+$('add-tenant').onclick=async()=>{
+  const tid=$('new-tid').value.trim();
+  const tname=$('new-tname').value.trim();
+  if(!tid){adminMsg('ID tenant wajib diisi.');return;}
+  try{
+    const r=await fetch(apiBase()+'/tenants',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({tenant_id:tid,name:tname||tid})});
+    const j=await r.json();
+    if(!j.ok) throw new Error(j.error);
+    $('new-tid').value=''; $('new-tname').value='';
+    adminMsg('Tenant '+tid+' ditambahkan.');
+    loadTenants();
+  }catch(e){ adminMsg('Gagal: '+e.message); }
+};
+
+$('change-pin-btn').onclick=async()=>{
+  const oldPin=$('cp-old').value.trim();
+  const newPin=$('cp-new').value.trim();
+  const pmsg=t=>{const el=$('pin-change-msg');el.textContent=t;setTimeout(()=>{if(el.textContent===t)el.textContent='';},4000);};
+  if(!oldPin||!newPin){pmsg('PIN lama dan baru wajib diisi.');return;}
+  if(!/^\d{4,8}$/.test(newPin)){pmsg('PIN baru harus 4-8 digit angka.');return;}
+  try{
+    const r=await fetch(apiBase()+'/admin/change-pin',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({current_pin:oldPin,new_pin:newPin})});
+    const j=await r.json();
+    if(!j.ok) throw new Error(j.error);
+    $('cp-old').value=''; $('cp-new').value='';
+    pmsg('PIN berhasil diubah.');
+    setTimeout(closeAdmin, 1200);
+  }catch(e){ pmsg('Gagal: '+e.message); }
+};
+
+scan.addEventListener('keydown',e=>{if(e.key==='Enter'){addScan(scan.value);scan.value='';}});
+$('scan-submit').onclick=()=>{addScan(scan.value);scan.value='';scan.focus();};
+$('tenant').addEventListener('change',render);
+$('cam').onclick=toggleCam;
+$('undo').onclick=undo;
+$('sync').onclick=()=>syncNow(false);
+$('exp').onclick=doExport;
+window.addEventListener('online',()=>{updateNet();syncNow(true);});
+window.addEventListener('offline',updateNet);
+updateNet(); render(); loadTenants(); scan.focus();
+</script>
+</body>
+</html>

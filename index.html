@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Counting Barcode</title>
+<style>
+  :root{--bg:#f6f5f1;--card:#fff;--ink:#23231f;--muted:#6b6b66;--line:#e4e2da;
+        --accent:#0f6e56;--accent-bg:#e1f5ee;--warn:#854f0b;--warn-bg:#faeeda;}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,system-ui,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--ink)}
+  .wrap{max-width:480px;margin:0 auto;padding:16px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px}
+  .top{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+  .brand{font-weight:600;font-size:17px}
+  .net{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted)}
+  .dot{width:9px;height:9px;border-radius:50%;background:#c2c0b6;display:inline-block}
+  .dot.on{background:var(--accent)}
+  label{font-size:13px;color:var(--muted)}
+  select{font:inherit;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:#fff}
+  input[type=text]{width:100%;padding:12px;border:1px solid var(--line);border-radius:10px;
+        font-family:ui-monospace,Menlo,Consolas,monospace;font-size:16px}
+  .stats{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin:14px 0}
+  .stat{background:var(--bg);border-radius:10px;padding:10px 12px}
+  .stat .l{font-size:12px;color:var(--muted)}
+  .stat .v{font-size:22px;font-weight:600}
+  .row{display:flex;align-items:center;gap:10px;padding:11px 4px;border-top:1px solid var(--line)}
+  .bc{flex:1;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px}
+  .pill{font-size:11px;padding:2px 8px;border-radius:20px;margin-left:6px}
+  .pill.p{background:var(--warn-bg);color:var(--warn)}
+  .pill.s{background:var(--accent-bg);color:var(--accent)}
+  .q{min-width:30px;text-align:center;font-size:18px;font-weight:600}
+  .btns{display:flex;gap:8px;margin-top:14px}
+  button{font:inherit;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:#fff;cursor:pointer}
+  button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+  button:active{transform:scale(.98)}
+  .empty{padding:24px;text-align:center;color:#9a9a93}
+  .msg{margin-top:10px;font-size:13px;color:var(--muted)}
+  .cfg{margin-top:16px;font-size:13px;color:var(--muted)}
+  .cfg input{width:100%;padding:8px;border:1px solid var(--line);border-radius:8px;font-size:13px;margin-top:4px}
+  textarea{width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;
+        font-family:ui-monospace,monospace;font-size:13px;margin-top:8px}
+  #reader{margin-top:12px;border-radius:10px;overflow:hidden}
+  #reader:empty{margin-top:0}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <div class="top">
+      <span class="brand">Counting Barcode</span>
+      <span class="net"><span class="dot" id="net"></span><span id="netlabel">offline</span></span>
+    </div>
+
+    <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px">
+      <label>Tenant</label>
+      <select id="tenant"><option>D07</option><option>D08</option><option>D09</option></select>
+    </div>
+
+    <div style="display:flex;gap:8px">
+      <input id="scan" type="text" inputmode="numeric" autocomplete="off"
+             placeholder="Scan / ketik barcode, lalu Enter" autofocus style="flex:1">
+      <button id="cam" style="white-space:nowrap">Kamera</button>
+    </div>
+    <div id="reader"></div>
+
+    <div class="stats">
+      <div class="stat"><div class="l">Total scan</div><div class="v" id="s-total">0</div></div>
+      <div class="stat"><div class="l">Item unik</div><div class="v" id="s-uniq">0</div></div>
+      <div class="stat"><div class="l">Belum sync</div><div class="v" id="s-pend">0</div></div>
+      <div class="stat"><div class="l">Tersinkron</div><div class="v" id="s-sync">0</div></div>
+    </div>
+
+    <div id="list"></div>
+
+    <div class="btns">
+      <button id="undo" style="flex:1">Undo</button>
+      <button id="sync" class="primary" style="flex:1.4">Sync sekarang</button>
+      <button id="exp" style="flex:1">Ekspor</button>
+    </div>
+
+    <div id="box"></div>
+
+    <div class="cfg">
+      Alamat API
+      <input id="api" type="text" placeholder="kosong = server yang sama (mis. http://localhost:3000)">
+    </div>
+  </div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script>
+const DB_NAME='counting', STORE='events';
+function openDB(){return new Promise((res,rej)=>{const r=indexedDB.open(DB_NAME,1);
+  r.onupgradeneeded=()=>{const db=r.result;if(!db.objectStoreNames.contains(STORE))db.createObjectStore(STORE,{keyPath:'id'});};
+  r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);});}
+async function allEvents(){const db=await openDB();return new Promise((res,rej)=>{
+  const rq=db.transaction(STORE,'readonly').objectStore(STORE).getAll();
+  rq.onsuccess=()=>res(rq.result);rq.onerror=()=>rej(rq.error);});}
+async function putEvent(ev){const db=await openDB();return new Promise((res,rej)=>{
+  const t=db.transaction(STORE,'readwrite');t.objectStore(STORE).put(ev);
+  t.oncomplete=()=>res();t.onerror=()=>rej(t.error);});}
+async function delEvent(id){const db=await openDB();return new Promise((res,rej)=>{
+  const t=db.transaction(STORE,'readwrite');t.objectStore(STORE).delete(id);
+  t.oncomplete=()=>res();t.onerror=()=>rej(t.error);});}
+
+const $=id=>document.getElementById(id);
+const scan=$('scan');
+const apiBase=()=>($('api').value||'').trim().replace(/\/$/,'');
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const uid=()=>crypto.randomUUID?crypto.randomUUID():Date.now()+'-'+Math.random().toString(16).slice(2);
+
+function msg(t){$('box').innerHTML='<div class="msg">'+esc(t)+'</div>';}
+
+async function addScan(code){
+  code=(code||'').trim(); if(!code) return;
+  await putEvent({id:uid(),tenant_id:$('tenant').value,barcode:code,scanned_at:new Date().toISOString(),synced:0});
+  await render();
+  if(navigator.onLine) syncNow(true);
+}
+
+async function undo(){
+  const pend=(await allEvents()).filter(e=>!e.synced).sort((a,b)=>a.scanned_at<b.scanned_at?1:-1);
+  if(!pend.length){msg('Tidak ada scan yang bisa di-undo (semua sudah tersinkron).');return;}
+  await delEvent(pend[0].id); await render();
+}
+
+async function syncNow(silent){
+  const pend=(await allEvents()).filter(e=>!e.synced);
+  if(!pend.length){if(!silent)msg('Tidak ada data untuk disinkron.');return;}
+  try{
+    const r=await fetch(apiBase()+'/sync',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({events:pend.map(({synced,...e})=>e)})});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    for(const e of pend){e.synced=1;await putEvent(e);}
+    await render(); msg('Tersinkron: '+pend.length+' scan ke database.');
+  }catch(err){ msg('Gagal sync ('+err.message+'). Data tetap aman, akan dicoba lagi saat online.'); }
+}
+
+async function render(){
+  const evs=(await allEvents()).sort((a,b)=>a.scanned_at<b.scanned_at?1:-1);
+  const byCode=new Map(); let pend=0;
+  for(const e of evs){
+    if(!byCode.has(e.barcode)) byCode.set(e.barcode,{qty:0,pending:0});
+    const o=byCode.get(e.barcode); o.qty++; if(!e.synced){o.pending++;pend++;}
+  }
+  $('s-total').textContent=evs.length;
+  $('s-uniq').textContent=byCode.size;
+  $('s-pend').textContent=pend;
+  $('s-sync').textContent=evs.length-pend;
+  const list=$('list');
+  if(!byCode.size){list.innerHTML='<div class="empty">Belum ada item. Scan atau ketik barcode di atas.</div>';return;}
+  list.innerHTML=[...byCode.entries()].map(([code,o])=>{
+    const pill=o.pending?`<span class="pill p">${o.pending} pending</span>`:`<span class="pill s">tersync</span>`;
+    return `<div class="row"><span class="bc">${esc(code)}${pill}</span><span class="q">${o.qty}</span></div>`;
+  }).join('');
+}
+
+async function doExport(){
+  const evs=await allEvents();
+  if(!evs.length){msg('Belum ada data untuk diekspor.');return;}
+  const m=new Map();
+  for(const e of evs){const k=e.tenant_id+'|'+e.barcode;m.set(k,(m.get(k)||0)+1);}
+  const txt=['tenant|barcode|qty',...[...m].map(([k,q])=>k+'|'+q)].join('\n');
+  $('box').innerHTML='<textarea readonly rows="'+Math.min(m.size+2,10)+'"></textarea>'+
+    '<div class="btns"><button id="cp" style="flex:1">Salin</button><button id="dl" style="flex:1">Download .txt</button></div>';
+  $('box').querySelector('textarea').value=txt;
+  $('cp').onclick=()=>{if(navigator.clipboard)navigator.clipboard.writeText(txt);$('cp').textContent='Tersalin';};
+  $('dl').onclick=()=>{const a=document.createElement('a');
+    a.href=URL.createObjectURL(new Blob([txt],{type:'text/plain'}));
+    a.download='counting_'+new Date().toISOString().slice(0,10)+'.txt';a.click();};
+}
+
+function updateNet(){const on=navigator.onLine;$('net').classList.toggle('on',on);$('netlabel').textContent=on?'online':'offline';}
+
+// --- Kamera (html5-qrcode): baca QR & barcode 1D dari video ---
+let qr=null, scanning=false, lastCode='', lastAt=0;
+async function toggleCam(){
+  if(scanning) return stopCam();
+  if(typeof Html5Qrcode==='undefined'){msg('Library kamera gagal dimuat (cek koneksi internet).');return;}
+  qr=qr||new Html5Qrcode('reader');
+  try{
+    await qr.start({facingMode:'environment'},{fps:10,qrbox:{width:240,height:160}},onDecode,()=>{});
+    scanning=true; $('cam').textContent='Tutup';
+  }catch(err){
+    msg('Kamera tidak bisa dibuka: '+err+'. Pastikan izin kamera diberikan dan situs diakses lewat HTTPS atau localhost.');
+  }
+}
+async function stopCam(){ try{await qr.stop(); qr.clear();}catch(e){} scanning=false; $('cam').textContent='Kamera'; $('reader').innerHTML=''; }
+function onDecode(text){
+  const now=Date.now();
+  if(text===lastCode && now-lastAt<1500) return; // jeda anti-dobel untuk kode yang sama
+  lastCode=text; lastAt=now;
+  addScan(text);
+}
+
+scan.addEventListener('keydown',e=>{if(e.key==='Enter'){addScan(scan.value);scan.value='';}});
+$('cam').onclick=toggleCam;
+$('undo').onclick=undo;
+$('sync').onclick=()=>syncNow(false);
+$('exp').onclick=doExport;
+window.addEventListener('online',()=>{updateNet();syncNow(true);});
+window.addEventListener('offline',updateNet);
+updateNet(); render(); scan.focus();
+</script>
+</body>
+</html>
